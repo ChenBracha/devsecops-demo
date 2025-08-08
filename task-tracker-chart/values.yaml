@@ -1,0 +1,10 @@
+replicaCount: 1
+
+image:
+  repository: task-tracker
+  tag: "0.1"
+  pullPolicy: IfNotPresent
+
+service:
+  type: LoadBalancer
+  port: 5000
