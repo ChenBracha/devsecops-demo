@@ -24,28 +24,24 @@ pipeline {
       }
     }
 
-    stage('Trivy Scan (blocking)') {
-     steps {
-       script {
-          // 1) Human-readable table (doesn't fail)
-         sh "trivy image --severity HIGH,CRITICAL --no-progress ${IMAGE} | tee trivy_table.txt"
+  stage('Trivy Scan (blocking)') {
+      steps {
+          script {
+              def trivyResult = sh(script: "trivy image --severity HIGH,CRITICAL --no-progress ${IMAGE} | tee trivy_output.txt", returnStatus: true)
 
-          // 2) JSON for exact counting
-          sh "trivy image --severity HIGH,CRITICAL --no-progress --format json ${IMAGE} > trivy.json || true"
+              // Parse the counts from Trivy output
+              def highCount = sh(script: "grep -c 'HIGH' trivy_output.txt || true", returnStdout: true).trim()
+              def criticalCount = sh(script: "grep -c 'CRITICAL' trivy_output.txt || true", returnStdout: true).trim()
 
-         def high = sh(script: "jq '[.Results[].Vulnerabilities[]? | select(.Severity==\"HIGH\")] | length' trivy.json", returnStdout: true).trim() as int
-         def crit = sh(script: "jq '[.Results[].Vulnerabilities[]? | select(.Severity==\"CRITICAL\")] | length' trivy.json", returnStdout: true).trim() as int
-         def total = high + crit
+              echo "🔍 Trivy Summary: ${highCount} HIGH, ${criticalCount} CRITICAL vulnerabilities found."
 
-         echo "🔍 Trivy Summary: ${total} total — ${high} HIGH, ${crit} CRITICAL."
-
-         if (total > 0) {
-           error "❌ Pipeline failed due to security vulnerabilities."
-          }
-        }
+              // Fail the build if vulnerabilities found
+              if (highCount.toInteger() > 0 || criticalCount.toInteger() > 0) {
+                  error "❌ Pipeline failed due to security vulnerabilities."
+              }
+        } 
       }
     }
-
 
 
     stage('Import Image to k3d') {
