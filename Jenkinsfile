@@ -1,4 +1,4 @@
-kpipeline {
+pipeline {
   agent any
   stages {
     stage('Sanity') {
