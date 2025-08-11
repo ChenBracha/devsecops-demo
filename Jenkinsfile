@@ -25,35 +25,27 @@ pipeline {
     }
 
     stage('Trivy Scan (blocking)') {
-      steps {
-        script {
-        // Run Trivy but do NOT auto-fail; we’ll decide based on parsed counts.
-          sh """
-          set -e
-          trivy image --severity HIGH,CRITICAL --no-progress ${IMAGE} | tee trivy_output.txt
-           """
+     steps {
+       script {
+          // 1) Human-readable table (doesn't fail)
+         sh "trivy image --severity HIGH,CRITICAL --no-progress ${IMAGE} | tee trivy_table.txt"
 
-      // Pull accurate counts from the "Total:" line
-      def parts = sh(script: '''
-        LINE=$(grep -E "^Total:" trivy_output.txt | tail -n1)
-        TOTAL=$(echo "$LINE"   | sed -n 's/^Total:\\s*\\([0-9]\\+\\).*/\\1/p')
-        HIGH=$(echo "$LINE"    | sed -n 's/.*HIGH:\\s*\\([0-9]\\+\\).*/\\1/p')
-        CRIT=$(echo "$LINE"    | sed -n 's/.*CRITICAL:\\s*\\([0-9]\\+\\).*/\\1/p')
-        echo "$TOTAL $HIGH $CRIT"
-      ''', returnStdout: true).trim().split(' ')
+          // 2) JSON for exact counting
+          sh "trivy image --severity HIGH,CRITICAL --no-progress --format json ${IMAGE} > trivy.json || true"
 
-        def total = parts[0] as int
-        def high  = parts[1] as int
-        def crit  = parts[2] as int
+         def high = sh(script: "jq '[.Results[].Vulnerabilities[]? | select(.Severity==\"HIGH\")] | length' trivy.json", returnStdout: true).trim() as int
+         def crit = sh(script: "jq '[.Results[].Vulnerabilities[]? | select(.Severity==\"CRITICAL\")] | length' trivy.json", returnStdout: true).trim() as int
+         def total = high + crit
 
          echo "🔍 Trivy Summary: ${total} total — ${high} HIGH, ${crit} CRITICAL."
 
-         if (high > 0 || crit > 0) {
+         if (total > 0) {
            error "❌ Pipeline failed due to security vulnerabilities."
-         }
-       }
-     }
+          }
+        }
+      }
     }
+
 
 
     stage('Import Image to k3d') {
