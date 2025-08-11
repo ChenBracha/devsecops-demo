@@ -36,7 +36,7 @@ pipeline {
       steps {
         sh 'trivy --version'
         // keep non-blocking while you iterate; later remove "|| true"
-        sh 'trivy image --no-progress --severity HIGH,CRITICAL $IMAGE_NAME || true'
+        sh 'trivy image --exit-code 1 --severity HIGH,CRITICAL --no-progress task-tracker:${IMAGE_TAG}'
       }
     }
 
