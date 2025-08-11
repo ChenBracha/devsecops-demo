@@ -28,7 +28,7 @@ pipeline {
     steps {
         script {
               sh """
-                 trivy image --severity HIGH,CRITICAL --exit-code TrivyScanFailed --no-progress ${IMAGE}
+                 trivy image --severity HIGH,CRITICAL --exit-code 1 --no-progress ${IMAGE}
               """
         }
       }
