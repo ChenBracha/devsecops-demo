@@ -24,9 +24,22 @@ pipeline {
       }
     }
 
-    stage('Trivy Scan (blocking)') {
-      steps {
-        sh 'trivy image --exit-code 1 --severity HIGH,CRITICAL --no-progress ${IMAGE}'
+   stage('Trivy Scan (blocking)') {
+    steps {
+        script {
+            def trivyResult = sh(script: "trivy image --severity HIGH,CRITICAL --no-progress ${IMAGE} | tee trivy_output.txt", returnStatus: true)
+
+            // Parse the counts from Trivy output
+            def highCount = sh(script: "grep -c 'HIGH' trivy_output.txt || true", returnStdout: true).trim()
+            def criticalCount = sh(script: "grep -c 'CRITICAL' trivy_output.txt || true", returnStdout: true).trim()
+
+            echo "🔍 Trivy Summary: ${highCount} HIGH, ${criticalCount} CRITICAL vulnerabilities found."
+
+            // Fail the build if vulnerabilities found
+            if (highCount.toInteger() > 0 || criticalCount.toInteger() > 0) {
+                error "❌ Pipeline failed due to security vulnerabilities."
+            }
+        }
       }
     }
 
