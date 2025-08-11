@@ -24,15 +24,18 @@ pipeline {
       }
     }
 
-  stage('Trivy Scan (blocking)') {
-    steps {
-        script {
-              sh """
-                 trivy image --severity HIGH,CRITICAL --exit-code 1 --no-progress ${IMAGE}
-              """
+    stage('Trivy Scan (blocking)') {
+        steps {
+            script {
+                def status = sh(script: "trivy image --severity HIGH,CRITICAL --exit-code 1 --no-progress ${IMAGE}", returnStatus: true)
+                if (status != 0) {
+                    echo "❌ Failed because Trivy report"
+                    error("Trivy scan detected vulnerabilities.")
+                }
+            }
         }
-      }
     }
+
 
 
 
