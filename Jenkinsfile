@@ -25,20 +25,15 @@ pipeline {
     }
 
   stage('Trivy Scan (blocking)') {
-      steps {
-          script {
-              def trivyResult = sh(script: "trivy image --severity HIGH,CRITICAL --no-progress ${IMAGE} | tee trivy_output.txt", returnStatus: true)
-
-              // Parse the counts from Trivy output
-              def highCount = sh(script: "grep -c 'HIGH' trivy_output.txt || true", returnStdout: true).trim()
-              def criticalCount = sh(script: "grep -c 'CRITICAL' trivy_output.txt || true", returnStdout: true).trim()
-              // Fail the build if vulnerabilities found
-              if (highCount.toInteger() > 0 || criticalCount.toInteger() > 0) {
-                  error "❌ Pipeline failed due to security vulnerabilities."
-              }
-        } 
+    steps {
+        script {
+              sh """
+                 trivy image --severity HIGH,CRITICAL --exit-code 1 --no-progress ${IMAGE}
+              """
+        }
       }
     }
+
 
 
     stage('Import Image to k3d') {
