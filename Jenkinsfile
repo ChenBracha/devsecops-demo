@@ -7,8 +7,8 @@ pipeline {
     CHART_DIR    = "./task-tracker-chart"
     NAMESPACE    = "default"
     SMOKE_URL    = "http://localhost:8080/health"
-    // kubectl/helm will look here; we mount it from host in docker run
-    KUBECONFIG   = "/var/jenkins_home/.kube/config"
+    // we'll create this file in the 'Fix kubeconfig' stage:
+    KUBECONFIG   = "/var/jenkins_home/kube/config"
   }
 
   options {
@@ -19,7 +19,7 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        checkout scm   // avoids the earlier 'master vs main' issue
+        checkout scm
         sh 'echo "Git commit: $(git rev-parse --short HEAD)"'
       }
     }
@@ -35,7 +35,7 @@ pipeline {
     stage('Trivy Scan (non-blocking)') {
       steps {
         sh 'trivy --version'
-        // remove "|| true" later to gate the build on HIGH/CRITICAL vulns
+        // keep non-blocking while you iterate; later remove "|| true"
         sh 'trivy image --no-progress --severity HIGH,CRITICAL $IMAGE_NAME || true'
       }
     }
@@ -47,28 +47,34 @@ pipeline {
       }
     }
 
-    stage('Fix kubeconfig for Docker Desktop') {
+    // ---- IMPORTANT: make kubeconfig valid *inside* the container ----
+    stage('Fix kubeconfig for Jenkins container') {
       steps {
         sh '''
-        set -e
-        mkdir -p /var/jenkins_home/kube
-        # prefer mounted kubeconfig; else generate one from k3d
-        if [ -f /var/jenkins_home/.kube/config ]; then
-          cp /var/jenkins_home/.kube/config /var/jenkins_home/kube/config
-        else
-          k3d kubeconfig get ${CLUSTER_NAME} > /var/jenkins_home/kube/config
-        fi
-        # replace only the host, keep the port
-        sed -i 's#https://0.0.0.0:#https://host.docker.internal:#g' /var/jenkins_home/kube/config
-        echo "Using kubeconfig at /var/jenkins_home/kube/config"
-        KUBECONFIG=/var/jenkins_home/kube/config kubectl cluster-info
+          set -eux
+          mkdir -p /var/jenkins_home/kube
+
+          # Use mounted kubeconfig if present; else generate from k3d
+          if [ -f /var/jenkins_home/.kube/config ]; then
+            cp /var/jenkins_home/.kube/config "$KUBECONFIG"
+          else
+            k3d kubeconfig get "${CLUSTER_NAME}" > "$KUBECONFIG"
+          fi
+
+          # Replace server to the k3d LB hostname that matches cluster certs
+          # Cert SAN includes: k3d-<cluster>-serverlb, localhost, etc.
+          # Use internal LB name so TLS verifies OK.
+          sed -E "s#https://[^:]+:[0-9]+#https://k3d-${CLUSTER_NAME}-serverlb:6443#g" -i "$KUBECONFIG"
+
+          echo "Using KUBECONFIG=$KUBECONFIG"
+          KUBECONFIG="$KUBECONFIG" kubectl cluster-info
         '''
-    script {
-      env.KUBECONFIG = '/var/jenkins_home/kube/config'
+        script {
+          // Make KUBECONFIG visible to the following stages
+          env.KUBECONFIG = '/var/jenkins_home/kube/config'
         }
       }
     }
-
 
     stage('Helm Deploy') {
       steps {
@@ -84,7 +90,6 @@ pipeline {
 
     stage('Smoke Test') {
       steps {
-        // try for up to ~30s while pods come up
         sh '''
           set -e
           for i in $(seq 1 15); do
@@ -101,8 +106,8 @@ pipeline {
   }
 
   post {
-    success { echo "Deployed $IMAGE_NAME to $CLUSTER_NAME ($NAMESPACE)" }
-    failure { echo "Build failed — check the failing stage’s logs." }
+    success { echo "✅ Deployed $IMAGE_NAME to $CLUSTER_NAME ($NAMESPACE)" }
+    failure { echo "❌ Build failed — see the stage logs above." }
     always  { echo "Build result: ${currentBuild.currentResult}" }
   }
 }
