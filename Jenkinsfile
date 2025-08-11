@@ -24,24 +24,37 @@ pipeline {
       }
     }
 
-   stage('Trivy Scan (blocking)') {
-    steps {
+    stage('Trivy Scan (blocking)') {
+      steps {
         script {
-            def trivyResult = sh(script: "trivy image --severity HIGH,CRITICAL --no-progress ${IMAGE} | tee trivy_output.txt", returnStatus: true)
+        // Run Trivy but do NOT auto-fail; we’ll decide based on parsed counts.
+          sh """
+          set -e
+          trivy image --severity HIGH,CRITICAL --no-progress ${IMAGE} | tee trivy_output.txt
+           """
 
-            // Parse the counts from Trivy output
-            def highCount = sh(script: "grep -c 'HIGH' trivy_output.txt || true", returnStdout: true).trim()
-            def criticalCount = sh(script: "grep -c 'CRITICAL' trivy_output.txt || true", returnStdout: true).trim()
+      // Pull accurate counts from the "Total:" line
+      def parts = sh(script: '''
+        LINE=$(grep -E "^Total:" trivy_output.txt | tail -n1)
+        TOTAL=$(echo "$LINE"   | sed -n 's/^Total:\\s*\\([0-9]\\+\\).*/\\1/p')
+        HIGH=$(echo "$LINE"    | sed -n 's/.*HIGH:\\s*\\([0-9]\\+\\).*/\\1/p')
+        CRIT=$(echo "$LINE"    | sed -n 's/.*CRITICAL:\\s*\\([0-9]\\+\\).*/\\1/p')
+        echo "$TOTAL $HIGH $CRIT"
+      ''', returnStdout: true).trim().split(' ')
 
-            echo "🔍 Trivy Summary: ${highCount} HIGH, ${criticalCount} CRITICAL vulnerabilities found."
+        def total = parts[0] as int
+        def high  = parts[1] as int
+        def crit  = parts[2] as int
 
-            // Fail the build if vulnerabilities found
-            if (highCount.toInteger() > 0 || criticalCount.toInteger() > 0) {
-                error "❌ Pipeline failed due to security vulnerabilities."
-            }
-        }
-      }
+         echo "🔍 Trivy Summary: ${total} total — ${high} HIGH, ${crit} CRITICAL."
+
+         if (high > 0 || crit > 0) {
+           error "❌ Pipeline failed due to security vulnerabilities."
+         }
+       }
+     }
     }
+
 
     stage('Import Image to k3d') {
       steps {
