@@ -52,22 +52,23 @@ pipeline {
         sh '''
         set -e
         mkdir -p /var/jenkins_home/kube
-        # prefer existing mounted kubeconfig if present; else generate one
+        # prefer mounted kubeconfig; else generate one from k3d
         if [ -f /var/jenkins_home/.kube/config ]; then
           cp /var/jenkins_home/.kube/config /var/jenkins_home/kube/config
         else
           k3d kubeconfig get ${CLUSTER_NAME} > /var/jenkins_home/kube/config
         fi
         # replace only the host, keep the port
-       sed -i 's#https://0.0.0.0:#https://host.docker.internal:#g' /var/jenkins_home/kube/config
-        export KUBECONFIG=/var/jenkins_home/kube/config
-        echo "Using KUBECONFIG=$KUBECONFIG"
-        kubectl cluster-info
-      '''
-    // make it visible to subsequent stages
-        env.KUBECONFIG = '/var/jenkins_home/kube/config'
+        sed -i 's#https://0.0.0.0:#https://host.docker.internal:#g' /var/jenkins_home/kube/config
+        echo "Using kubeconfig at /var/jenkins_home/kube/config"
+        KUBECONFIG=/var/jenkins_home/kube/config kubectl cluster-info
+        '''
+    script {
+      env.KUBECONFIG = '/var/jenkins_home/kube/config'
+        }
       }
     }
+
 
     stage('Helm Deploy') {
       steps {
