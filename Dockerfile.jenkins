@@ -40,4 +40,3 @@ RUN apt-get update && apt-get install -y wget gnupg && \
 
 # Return to jenkins user
 USER jenkins
-
