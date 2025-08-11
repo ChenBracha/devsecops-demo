@@ -69,10 +69,10 @@ pipeline {
 
   post {
     success {
-      echo "✅ Deployed $IMAGE_NAME"
+      echo "Deployed $IMAGE_NAME"
     }
     failure {
-      echo "❌ Build failed. Check the stage that broke (Docker/Trivy/k3d/Helm/Smoke)."
+      echo "Build failed. Check the stage that broke (Docker/Trivy/k3d/Helm/Smoke)."
     }
     always {
       script {
